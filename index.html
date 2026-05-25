@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulasi Suspensi Regeneratif</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f8ff; }
+        .canvas-container { position: relative; background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .control-panel { background: #ffffff; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .data-panel { background: #2d3748; color: #e2e8f0; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        
+        /* Toggle Switch CSS */
+        .switch { position: relative; display: inline-block; width: 50px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #48bb78; }
+        input:checked + .slider:before { transform: translateX(26px); }
+    </style>
+</head>
+<body class="p-4 flex flex-col items-center min-h-screen">
+
+    <div class="w-full max-w-6xl">
+        <!-- Header -->
+        <header class="mb-4 text-center">
+            <h1 class="text-3xl font-bold text-blue-800">Simulasi Suspensi Regeneratif</h1>
+            <p class="text-gray-600 mt-2 text-sm max-w-4xl mx-auto">
+                Mengubah energi kinetik (getaran mekanik) menjadi energi listrik menggunakan Hukum Faraday. 
+                Magnet berosilasi dalam kumparan menghasilkan arus AC, disearahkan oleh dioda bridge menjadi arus DC berdenyut, lalu disimpan di kapasitor untuk menyalakan LED.
+            </p>
+        </header>
+
+        <!-- Main Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            
+            <!-- Left: Controls -->
+            <div class="control-panel p-4 lg:col-span-3 flex flex-col gap-4">
+                <h2 class="font-bold text-lg border-b pb-2">Kontrol Variabel</h2>
+                
+                <div>
+                    <label class="block text-sm font-medium mb-1">Amplitudo Awal (cm): <span id="valAmp">5</span></label>
+                    <input type="range" id="inpAmp" min="1" max="8" value="5" class="w-full">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium mb-1">Massa Beban (g): <span id="valMass">100</span></label>
+                    <input type="range" id="inpMass" min="50" max="300" value="100" class="w-full">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium mb-1">Konstanta Pegas (N/m): <span id="valSpring">50</span></label>
+                    <input type="range" id="inpSpring" min="10" max="150" value="50" class="w-full">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium mb-1">Jumlah Lilitan (N): <span id="valCoil">500</span></label>
+                    <input type="range" id="inpCoil" min="100" max="1000" step="100" value="500" class="w-full">
+                </div>
+
+                <div class="mt-4 flex flex-col gap-2">
+                    <button id="btnBump" class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded shadow font-semibold transition">
+                        Tekan Magnet (1x Osilasi)
+                    </button>
+                    <button id="btnRoad" class="bg-yellow-500 hover:bg-yellow-600 text-white py-2 px-4 rounded shadow font-semibold transition">
+                        Simulasi Jalan Bergelombang
+                    </button>
+                </div>
+
+                <div class="mt-4 border-t pt-4">
+                    <div class="flex items-center justify-between">
+                        <span class="font-semibold text-sm">Sakelar LED (Beban)</span>
+                        <label class="switch">
+                            <input type="checkbox" id="inpLED">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Nyalakan untuk menguras energi kapasitor.</p>
+                </div>
+            </div>
+
+            <!-- Center: Visual Simulation -->
+            <div class="lg:col-span-6 flex justify-center">
+                <canvas id="simCanvas" width="500" height="400" class="canvas-container w-full max-w-[500px]"></canvas>
+            </div>
+
+            <!-- Right: Live Data -->
+            <div class="data-panel p-4 lg:col-span-3 flex flex-col gap-3">
+                <h2 class="font-bold text-lg border-b border-gray-600 pb-2 text-yellow-400">Parameter Teoritis & Pengukuran</h2>
+                
+                <div class="bg-gray-800 p-2 rounded">
+                    <span class="block text-xs text-gray-400">Frekuensi Osilasi (f)</span>
+                    <span class="text-xl font-mono" id="outFreq">0.00 Hz</span>
+                </div>
+                
+                <div class="bg-gray-800 p-2 rounded">
+                    <span class="block text-xs text-gray-400">Kecepatan Max (V_max = A·2πf)</span>
+                    <span class="text-xl font-mono" id="outVmax">0.00 m/s</span>
+                </div>
+                
+                <div class="bg-gray-800 p-2 rounded">
+                    <span class="block text-xs text-blue-300">Tegangan Induksi (GGL) Peak</span>
+                    <span class="text-xl font-mono text-blue-300" id="outGGL">0.00 V (AC)</span>
+                </div>
+
+                <div class="bg-gray-800 p-2 rounded border border-green-500">
+                    <span class="block text-xs text-green-400">Tegangan Kapasitor (DC)</span>
+                    <span class="text-xl font-mono text-green-400" id="outVcap">0.00 V</span>
+                </div>
+
+                <div class="bg-gray-800 p-2 rounded border border-yellow-500">
+                    <span class="block text-xs text-yellow-400">Energi Tersimpan (½CV²)</span>
+                    <span class="text-xl font-mono text-yellow-400" id="outEnergy">0.00 mJ</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom: Graphs -->
+        <div class="w-full mt-4 canvas-container p-2">
+            <h3 class="text-center font-bold text-gray-700 text-sm mb-1">Osiloskop (Real-time)</h3>
+            <canvas id="graphCanvas" width="1100" height="200" class="w-full"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const simCanvas = document.getElementById('simCanvas');
+        const simCtx = simCanvas.getContext('2d');
+        const graphCanvas = document.getElementById('graphCanvas');
+        const graphCtx = graphCanvas.getContext('2d');
+
+        const inpAmp = document.getElementById('inpAmp');
+        const inpMass = document.getElementById('inpMass');
+        const inpSpring = document.getElementById('inpSpring');
+        const inpCoil = document.getElementById('inpCoil');
+        const inpLED = document.getElementById('inpLED');
+        const btnBump = document.getElementById('btnBump');
+        const btnRoad = document.getElementById('btnRoad');
+
+        // Text Outputs
+        const valAmp = document.getElementById('valAmp');
+        const valMass = document.getElementById('valMass');
+        const valSpring = document.getElementById('valSpring');
+        const valCoil = document.getElementById('valCoil');
+        
+        const outFreq = document.getElementById('outFreq');
+        const outVmax = document.getElementById('outVmax');
+        const outGGL = document.getElementById('outGGL');
+        const outVcap = document.getElementById('outVcap');
+        const outEnergy = document.getElementById('outEnergy');
+
+        // Physics State & Parameters
+        let time = 0;
+        let dt = 0.016; // ~60fps
+        
+        let y = 0; // Position (meters, scaled for visual)
+        let v = 0; // Velocity
+        let mass = 0.1; // kg
+        let k = 50; // N/m
+        let damping = 0.5; // Damping coefficient (friction/EM drag)
+        let setAmplitude = 0.05; // meters
+        let coilTurns = 500;
+        
+        let capVoltage = 0; // Voltage in capacitor
+        let capCapacity = 0.001; // 1000 uF
+        let gglInduksi = 0;
+        
+        let isBumpyRoad = false;
+
+        // Data arrays for graphs
+        const maxDataPoints = 300;
+        let yData = new Array(maxDataPoints).fill(0);
+        let gglData = new Array(maxDataPoints).fill(0);
+        let capData = new Array(maxDataPoints).fill(0);
+
+        // Update parameters from UI
+        function updateParams() {
+            setAmplitude = parseFloat(inpAmp.value) / 100; // cm to m
+            valAmp.textContent = inpAmp.value;
+            
+            mass = parseFloat(inpMass.value) / 1000; // g to kg
+            valMass.textContent = inpMass.value;
+            
+            k = parseFloat(inpSpring.value);
+            valSpring.textContent = inpSpring.value;
+            
+            coilTurns = parseFloat(inpCoil.value);
+            valCoil.textContent = inpCoil.value;
+
+            // Calculate Theoretical values
+            let w = Math.sqrt(k / mass);
+            let f = w / (2 * Math.PI);
+            let vmax = setAmplitude * 2 * Math.PI * f;
+            
+            outFreq.textContent = f.toFixed(2) + " Hz";
+            outVmax.textContent = vmax.toFixed(2) + " m/s";
+        }
+
+        // Event Listeners
+        inpAmp.addEventListener('input', updateParams);
+        inpMass.addEventListener('input', updateParams);
+        inpSpring.addEventListener('input', updateParams);
+        inpCoil.addEventListener('input', updateParams);
+
+        btnBump.addEventListener('click', () => {
+            y = setAmplitude; // Offset position to simulate pressing the magnet
+            v = 0;
+            isBumpyRoad = false;
+        });
+
+        btnRoad.addEventListener('click', () => {
+            isBumpyRoad = !isBumpyRoad;
+            btnRoad.textContent = isBumpyRoad ? "Hentikan Jalan Bergelombang" : "Simulasi Jalan Bergelombang";
+            btnRoad.className = isBumpyRoad ? 
+                "bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded shadow font-semibold transition" : 
+                "bg-yellow-500 hover:bg-yellow-600 text-white py-2 px-4 rounded shadow font-semibold transition";
+        });
+
+        // Initialize
+        updateParams();
+
+        // Physics Engine Loop
+        function updatePhysics() {
+            // 1. Mechanical System (Spring-Mass)
+            if (isBumpyRoad) {
+                // Random force injections to simulate bumpy road
+                if (Math.random() < 0.1) {
+                    v += (Math.random() - 0.5) * 1.5;
+                }
+            }
+
+            // F = -ky - cv
+            let force = -k * y - damping * v;
+            let a = force / mass;
+            
+            v += a * dt;
+            y += v * dt;
+
+            // 2. Electromagnetic Induction (Faraday's Law)
+            // e = -N * B * l * v. We simplify B*l to a constant.
+            let magneticConstant = 0.05; // Arbitrary constant for simulation scale
+            gglInduksi = coilTurns * magneticConstant * v;
+
+            // 3. Rectification & Capacitor Charging
+            let diodeDrop = 1.4; // Full bridge rectifier drop (2 diodes)
+            let rectifiedVoltage = Math.abs(gglInduksi) - diodeDrop;
+            
+            if (rectifiedVoltage > 0) {
+                // Charge capacitor if input voltage is higher than capacitor voltage
+                if (rectifiedVoltage > capVoltage) {
+                    // Simple charging RC model
+                    let R_internal = 10; // ohms
+                    let current = (rectifiedVoltage - capVoltage) / R_internal;
+                    capVoltage += (current / capCapacity) * dt;
+                }
+            }
+
+            // 4. LED / Load Discharging
+            let ledStatus = inpLED.checked;
+            if (ledStatus && capVoltage > 1.8) { // LED forward voltage approx 1.8V
+                let R_led = 100; // ohms
+                let dischargeCurrent = (capVoltage - 1.8) / R_led;
+                capVoltage -= (dischargeCurrent / capCapacity) * dt;
+            } else if (capVoltage > 0) {
+                // Natural slow leakage
+                capVoltage -= (0.01 / capCapacity) * dt;
+                if (capVoltage < 0) capVoltage = 0;
+            }
+
+            // Update UI Numbers
+            outGGL.textContent = Math.abs(gglInduksi).toFixed(2) + " V (AC Peak)";
+            outVcap.textContent = capVoltage.toFixed(2) + " V";
+            let energy = 0.5 * capCapacity * capVoltage * capVoltage * 1000; // mJ
+            outEnergy.textContent = energy.toFixed(2) + " mJ";
+
+            // Update graph arrays
+            yData.push(y);
+            yData.shift();
+            gglData.push(gglInduksi);
+            gglData.shift();
+            capData.push(capVoltage);
+            capData.shift();
+        }
+
+        // Draw Simulation Graphics
+        function drawSimulation() {
+            simCtx.clearRect(0, 0, simCanvas.width, simCanvas.height);
+
+            const centerX = simCanvas.width / 2 - 50;
+            const baseY = 50; // Top mounting point
+            
+            // Map physical y (-0.1 to 0.1) to pixel y
+            const pixelY = baseY + 100 + (y * 1000); 
+
+            // Draw Top Mount
+            simCtx.fillStyle = '#4a5568';
+            simCtx.fillRect(centerX - 40, baseY - 10, 80, 10);
+
+            // Draw Spring
+            simCtx.beginPath();
+            simCtx.strokeStyle = '#a0aec0';
+            simCtx.lineWidth = 3;
+            simCtx.moveTo(centerX, baseY);
+            let coils = 10;
+            let coilHeight = (pixelY - baseY) / coils;
+            for(let i=0; i<=coils; i++) {
+                let xOffset = (i % 2 === 0) ? 15 : -15;
+                if(i === 0 || i === coils) xOffset = 0;
+                simCtx.lineTo(centerX + xOffset, baseY + i * coilHeight);
+            }
+            simCtx.stroke();
+
+            // Draw Magnet (Red North, Blue South)
+            simCtx.fillStyle = '#e53e3e'; // Red
+            simCtx.fillRect(centerX - 15, pixelY, 30, 40);
+            simCtx.fillStyle = '#fff';
+            simCtx.font = "14px Arial";
+            simCtx.fillText("U", centerX - 5, pixelY + 25);
+
+            simCtx.fillStyle = '#3182ce'; // Blue
+            simCtx.fillRect(centerX - 15, pixelY + 40, 30, 40);
+            simCtx.fillStyle = '#fff';
+            simCtx.fillText("S", centerX - 5, pixelY + 65);
+
+            // Draw Coil Tube (Stationary)
+            const coilBaseY = baseY + 140;
+            simCtx.strokeStyle = '#d69e2e'; // Copper color
+            simCtx.lineWidth = 2;
+            for(let i=0; i<30; i++) {
+                simCtx.beginPath();
+                simCtx.ellipse(centerX, coilBaseY + (i*4), 22, 6, 0, 0, Math.PI * 2);
+                simCtx.stroke();
+            }
+
+            // Draw Circuit Wires
+            simCtx.strokeStyle = '#000';
+            simCtx.lineWidth = 2;
+            simCtx.beginPath();
+            simCtx.moveTo(centerX + 22, coilBaseY + 10);
+            simCtx.lineTo(centerX + 120, coilBaseY + 10);
+            simCtx.lineTo(centerX + 120, 150); // To Bridge AC 1
+            
+            simCtx.moveTo(centerX + 22, coilBaseY + 110);
+            simCtx.lineTo(centerX + 140, coilBaseY + 110);
+            simCtx.lineTo(centerX + 140, 200); // To Bridge AC 2
+            simCtx.stroke();
+
+            // Draw Bridge Rectifier Box
+            simCtx.fillStyle = '#2d3748';
+            simCtx.fillRect(centerX + 100, 150, 60, 50);
+            simCtx.fillStyle = '#fff';
+            simCtx.font = "10px Arial";
+            simCtx.fillText("Dioda", centerX + 115, 170);
+            simCtx.fillText("Bridge", centerX + 115, 185);
+
+            // DC Wires out of Bridge
+            simCtx.beginPath();
+            simCtx.strokeStyle = 'red'; // Positive
+            simCtx.moveTo(centerX + 160, 160);
+            simCtx.lineTo(centerX + 220, 160);
+            
+            simCtx.strokeStyle = 'black'; // Negative
+            simCtx.moveTo(centerX + 160, 190);
+            simCtx.lineTo(centerX + 220, 190);
+            simCtx.stroke();
+
+            // Draw Capacitor
+            simCtx.fillStyle = '#4a5568';
+            simCtx.fillRect(centerX + 190, 140, 20, 70);
+            simCtx.fillStyle = '#fff';
+            simCtx.fillText("C", centerX + 196, 175);
+            
+            // Draw LED Circuit
+            simCtx.beginPath();
+            simCtx.strokeStyle = 'red';
+            simCtx.moveTo(centerX + 220, 160);
+            simCtx.lineTo(centerX + 270, 160);
+            simCtx.lineTo(centerX + 270, 220);
+            
+            simCtx.strokeStyle = 'black';
+            simCtx.moveTo(centerX + 220, 190);
+            simCtx.lineTo(centerX + 270, 190);
+            simCtx.lineTo(centerX + 270, 240);
+            simCtx.stroke();
+
+            // Draw Switch
+            simCtx.beginPath();
+            simCtx.strokeStyle = 'black';
+            simCtx.moveTo(centerX + 260, 160);
+            if(inpLED.checked) {
+                simCtx.lineTo(centerX + 280, 160); // Closed
+            } else {
+                simCtx.lineTo(centerX + 275, 145); // Open
+            }
+            simCtx.stroke();
+
+            // Draw LED
+            const ledIntensity = Math.min(capVoltage / 5, 1); // Max brightness at 5V
+            let isLedOn = inpLED.checked && capVoltage > 1.8;
+            
+            simCtx.beginPath();
+            simCtx.fillStyle = isLedOn ? `rgba(255, 0, 0, ${ledIntensity})` : '#555';
+            simCtx.arc(centerX + 270, 230, 15, 0, Math.PI * 2);
+            simCtx.fill();
+            simCtx.strokeStyle = '#333';
+            simCtx.stroke();
+            
+            // Glow effect
+            if(isLedOn) {
+                simCtx.beginPath();
+                simCtx.fillStyle = `rgba(255, 0, 0, ${ledIntensity * 0.3})`;
+                simCtx.arc(centerX + 270, 230, 30, 0, Math.PI * 2);
+                simCtx.fill();
+            }
+        }
+
+        // Draw Graphs (Oscilloscope style)
+        function drawGraphs() {
+            graphCtx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
+            
+            const w = graphCanvas.width;
+            const h = graphCanvas.height;
+            const centerY = h / 2;
+
+            // Grid lines
+            graphCtx.strokeStyle = '#e2e8f0';
+            graphCtx.lineWidth = 1;
+            graphCtx.beginPath();
+            graphCtx.moveTo(0, centerY); graphCtx.lineTo(w, centerY); // X axis
+            graphCtx.stroke();
+
+            const dx = w / maxDataPoints;
+
+            // Draw Position (scaled) - Gray
+            graphCtx.beginPath();
+            graphCtx.strokeStyle = 'rgba(160, 174, 192, 0.5)';
+            graphCtx.lineWidth = 2;
+            for(let i=0; i<maxDataPoints; i++) {
+                let px = i * dx;
+                let py = centerY - (yData[i] * 500); // Scale y for visibility
+                if(i===0) graphCtx.moveTo(px, py);
+                else graphCtx.lineTo(px, py);
+            }
+            graphCtx.stroke();
+
+            // Draw AC Voltage (GGL) - Blue
+            graphCtx.beginPath();
+            graphCtx.strokeStyle = '#4299e1'; // Blue
+            graphCtx.lineWidth = 2;
+            for(let i=0; i<maxDataPoints; i++) {
+                let px = i * dx;
+                let py = centerY - (gglData[i] * 5); // Scale voltage (1V = 5px)
+                if(i===0) graphCtx.moveTo(px, py);
+                else graphCtx.lineTo(px, py);
+            }
+            graphCtx.stroke();
+
+            // Draw DC Voltage (Capacitor) - Green
+            graphCtx.beginPath();
+            graphCtx.strokeStyle = '#48bb78'; // Green
+            graphCtx.lineWidth = 3;
+            for(let i=0; i<maxDataPoints; i++) {
+                let px = i * dx;
+                let py = h - 10 - (capData[i] * 5); // Base at bottom, Scale voltage
+                if(i===0) graphCtx.moveTo(px, py);
+                else graphCtx.lineTo(px, py);
+            }
+            graphCtx.stroke();
+
+            // Legend
+            graphCtx.font = "12px Arial";
+            graphCtx.fillStyle = "rgba(160, 174, 192, 0.8)";
+            graphCtx.fillText("■ Posisi Magnet (Mekanik)", 10, 20);
+            graphCtx.fillStyle = "#4299e1";
+            graphCtx.fillText("■ Tegangan Kumparan (AC)", 10, 40);
+            graphCtx.fillStyle = "#48bb78";
+            graphCtx.fillText("■ Tegangan Kapasitor (DC)", 10, 60);
+        }
+
+        // Main Animation Loop
+        function animate() {
+            updatePhysics();
+            drawSimulation();
+            drawGraphs();
+            requestAnimationFrame(animate);
+        }
+
+        // Start simulation
+        animate();
+
+    </script>
+</body>
+</html>
